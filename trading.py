@@ -19,8 +19,13 @@ class Stock_Portfolio():
         self.spread = {"BOND": 1, "STOCKS B": 5} #TODO: change with real stocks names
 
         # penny-pinching
-        self.max_price_reg = {"A":0, "B":0}
-        self.min_price_reg = {"A":0, "B":0}
+        self.stock_regular = ["A", "B", "C"];
+        self.stock_simple_fund = ["A", "B", "C"];
+        self.stock_complex_fund = ["A", "B", "C"];
+        self.stock_bond = ["A", "B", "C"]
+
+        self.max_price = {"A":0, "B":0}
+        self.min_price = {"A":0, "B":0}
 
         self.indicator_prices = {}
         self.simple_fund_prices = {}
@@ -56,7 +61,10 @@ def place_order(symbol, trade_direction, amount, my_portfolio, exchange):
 def cancel_order(): # TODO: haven't implemented yet
 
 # high level trading, buy & sell the max amount of stocks
-def trigger_trade(symbol, exchange, fair_price, my_portfolio):
+def penny_trade(symbol, exchange, my_portfolio):
+    min_price = my_portfolio.min_price[symbol]
+    max_price = my_portfolio.max_price[symbol]
+
     buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
     sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
     symbol_limit = my_portfolio.symbol_sum_limit[symbol]
@@ -65,9 +73,9 @@ def trigger_trade(symbol, exchange, fair_price, my_portfolio):
     sell_amount = symbolLimit - sell
 
     if buy < symbol_limit and buy_amount > 0:
-        place_order(symbol, "BUY", fair_price - my_portfolio.spread, buy_amount, my_portfolio, exchange)
+        place_order(symbol, "BUY", max_price + my_portfolio.spread, buy_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
     if sell < symbol_limit and sell_amount > 0:
-        place_order(symbol, "SELL", fair_price + my_portfolio.spread, sell_amount, my_portfolio, exchange)
+        place_order(symbol, "SELL", min_price - my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
 
 def trade_bond(exchange, my_portfolio):
     fair_price = 1000
@@ -97,6 +105,55 @@ def connect():
     # parameters: mode, bufsize
     return s.makefile('w+', 1)
 
+def update_max_min(market_message, my_portfolio):
+    current_market = market_message;
+    current_market = json.loads(current_market)
+    if current_market['symbol'] in my_portfolio.max_price:
+        symbol = current_market['symbol']
+        my_portfolio.max_price[symbol] = current_market['buy'][0] # TODO: analyze book object structure key is buy and value is an array
+    if current_market['symbol'] in my_portfolio.min_price:
+        symbol = current_market['symbol']
+        my_portfolio.min_price[symbol] = current_market['sell'][0] # TODO: analyze book object structure key is sell and value is an array
+
+def simple_fund_trade(market_message, my_portfolio):
+    convertion = True
+    indicator_price = my_portfolio.max_price["NAME"] # TODO: edit indicator name for simple fund
+    fund_price = my_portfolio.max_price["NAME"]       # TODO: get simple fund name
+    if convertion :
+        if fund_price + 2 < indicator_price :       # TODO: verify conversion rate
+            one_way("fund_name", "BUY", my_portfolio, exchange) #TODO: fund_name
+            convert("SELL", my_portfolio.symbol_sum_limit["fund_name"], my_portfolio, exchange)  #TODO: fund_name
+            one_way("indicator_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+        elif indicator_price + 2 < fund_price:
+            one_way("indicator_name", "BUY", my_portfolio, exchange) #TODO: fund_name
+            convert("BUY", my_portfolio.symbol_sum_limit["indicator_name"], my_portfolio, exchange)  #TODO: indicator_name 1:1 conversion?
+            one_way("fund_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+
+def convert_simple(trade_direction, amount, my_portfolio, exchange):
+    index = my_portfolio.order_history_index
+    my_portfolio.order_history_index = index + 1
+
+    json = '{"type": "convert", "order_id": %d' % history_trade_order_index + ', "symbol": "SIMPLE_NAME", "dir": "' + trade_direction + '", "size": %s}' % str( #TODO: add  Simple name
+        amount)
+
+    print(json, file=exchange)
+    # TODO: adapt balances accordingly
+    myTrade_Portfolio.order_history_list[history_trade_order_index] = Trade_Ticket("XLF", -1, amount, trade_direction,
+                                                                                   myTrade_Portfolio,
+                                                                                   is_not_allow_fill=True)
+
+    if trade_direction == "BUY":
+        sign = +1
+    else:
+        sign = -1
+
+    #convert stocks to XLF
+    myTrade_Portfolio.positions_sym["BOND"] -= sign * 3 * amount / 10
+    myTrade_Portfolio.positions_sym["GS"] -= sign * 2 * amount / 10
+    myTrade_Portfolio.positions_sym["MS"] -= sign * 3 * amount / 10
+    myTrade_Portfolio.positions_sym["WFC"] -= sign * 2 * amount / 10
+    myTrade_Portfolio.positions_sym["XLF"] += sign * amount
+
 def main():
     # permission to trade each kind of stocks
     trade_bond = True  # 1
@@ -107,6 +164,8 @@ def main():
     exchange = connect()
     json = '{"type":"hello","team":"?????"}' # TODO: fill in team name
     print(json, file=exchange)
+
+    my_portfolio = Stock_Portfolio(exchange)
 
     # parseMarketMessage???
 
@@ -120,13 +179,22 @@ def main():
                 print("@@@Log: %s" % str(market_info_raw), file=sys.stderr)
 
         if trade_bond:
-            trigger_trade("BOND", exchange, 1000, my_portfolio)
+            trade_bond(exchange, my_portfolio)
+
+        #update
+        if(json.loads(market_info_raw)['type'] == 'book'):
+            update_max_min(market_info_raw, my_portfolio)
 
         if trade_regular:
-            for stock in max_price_reg:
-                trigger_trade(stock, "BUY", max_price_reg[stock]+1, my_portfolio)
-            for stock in min_price_reg:
-                trigger_trade(stock, "Sell", min_price_reg[stock]-1, my_portfolio)
+            for stock in my_portfolio.stock_regular: # for regular stocks trigger  trade --> penny pitch max and min
+                if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
+                    penny_trade(stock, exchange, my_portfolio)
+
+        if trade_simple_fund:
+            for stock in my_portfolio.stock_simple_fund:
+                if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
+                    simple_fund_trade()
+
 
 
         if trade_complex_fund:
