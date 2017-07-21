@@ -18,8 +18,12 @@ class Stock_Portfolio():
         self.symbol_sum_limit = {"BOND": 100, "STOCKS B": 100} #TODO: change with real stocks names
         self.spread = {"BOND": 1, "STOCKS B": 5} #TODO: change with real stocks names
 
-        self.max_price_list = {"STOCKS":[]}
-        self.min_price_list = {"STOCKS":[]}
+        # penny-pinching
+        self.max_price_reg = {"A":0, "B":0}
+        self.min_price_reg = {"A":0, "B":0}
+
+        self.indicator_prices = {}
+        self.simple_fund_prices = {}
 
     # return the total amount of pending order of a stock
     def pending_order_sum(self, symbol, trade_direction):
@@ -39,9 +43,9 @@ class Order():
 
 def place_order(symbol, trade_direction, amount, my_portfolio, exchange):
     index = my_portfolio.order_history_index
-    order_history_index = order_history_index + 1
+    my_portfolio.order_history_index = index + 1
     json = '{"type": "add", "order_id": ' + str(
-        history_trade_order_index) + ',"symbol": "' + symbol + '", "dir": "' + trade_direction + '", "price": ' + str(
+        index) + ',"symbol": "' + symbol + '", "dir": "' + trade_direction + '", "price": ' + str(
         price) + ', "size" : ' + str(amount) + '}' # TODO: make sure json has correct format
 
     print(json, file=sys.stderr)
@@ -83,6 +87,7 @@ def parse_market_message(market_message, my_portfolio):
 
     elif data['type'] == 'hello':
 
+
 # connect to server
 def connect():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -94,10 +99,10 @@ def connect():
 
 def main():
     # permission to trade each kind of stocks
-    trade_bond = True
-    trade_regular = True
-    trade_complex_fund = True
-    trade_simple_fund = True
+    trade_bond = True  # 1
+    trade_regular = False  # penny-pinching 2 --> identify delay for simple fund trading
+    trade_complex_fund = False  # decompostion 3
+    trade_simple_fund = False  # tracing 3
 
     exchange = connect()
     json = '{"type":"hello","team":"?????"}' # TODO: fill in team name
@@ -108,7 +113,7 @@ def main():
     while True:
         market_info_raw = exchange.readline().strip()
 
-        # error, print for debugging
+        # error, print for debugging  --> not ERROR! just used for personal recordkepping--> statistical analysis
         if market_info_raw is not None:
             if json.loads(market_info_raw)['type'] != 'ack' and json.loads(market_info_raw)['type'] != 'book' \
                     and json.loads(market_info_raw)['type'] != 'trade':
@@ -116,8 +121,24 @@ def main():
 
         if trade_bond:
             trigger_trade("BOND", exchange, 1000, my_portfolio)
+
         if trade_regular:
+            for stock in max_price_reg:
+                trigger_trade(stock, "BUY", max_price_reg[stock]+1, my_portfolio)
+            for stock in min_price_reg:
+                trigger_trade(stock, "Sell", min_price_reg[stock]-1, my_portfolio)
+
 
         if trade_complex_fund:
+            component_price = 0  # calculate the price of the fund according to respective composition
+            # get highest price for all components --> max_price_list
+            if component_price > current_fund_price:
+                # buy fund --> convert to component and sell individual components
+            else:
+                # buy individual components --> convert to fund and sell all
 
         if trade_simple_fund:
+            # get increses or decreases of indicator 0/5/10/20/50 ticks?
+            # buy or sell fund accordingly
+            # set timer index to appropriate number of ticks
+            # if market_info_raw is not None: --> increase tick counter +1 one until tracing distance is reached --> buy/sell all inversly
