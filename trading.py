@@ -77,10 +77,40 @@ def penny_trade(symbol, exchange, my_portfolio):
     if sell < symbol_limit and sell_amount > 0:
         place_order(symbol, "SELL", min_price - my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
 
-def trade_bond(exchange, my_portfolio):
-    fair_price = 1000
-    place_order("BOND", "BUY", fair_price - 1, 100, my_portfolio, exchange)
-    place_order("BOND", "SELL", fair_price + 1, 100, my_portfolio, exchange)
+def bond_trade(symbol, exchange, fair_price, my_portfolio):
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbolLimit - buy
+    sell_amount = symbolLimit - sell
+
+    if buy < symbol_limit and buy_amount > 0:
+        place_order(symbol, "BUY", fair_price - my_portfolio.spread, buy_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+    if sell < symbol_limit and sell_amount > 0:
+        place_order(symbol, "SELL", fair_price + my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+
+
+
+def one_way(symbol, trade_direction, exchange, my_portfolio):
+
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbolLimit - buy
+    sell_amount = symbolLimit - sell
+
+    if trade_direction == "BUY":
+        max_price = my_portfolio.max_price[symbol]
+        if buy < symbol_limit and buy_amount > 0:
+            place_order(symbol, "BUY", max_price + my_portfolio.spread, buy_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+
+    else:
+        min_price = my_portfolio.min_price[symbol]
+        if sell < symbol_limit and sell_amount > 0:
+            place_order(symbol, "SELL", min_price - my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+
 
 def parse_market_message(market_message, my_portfolio):
     data = json.loads(market_message)
@@ -120,14 +150,17 @@ def simple_fund_trade(market_message, my_portfolio):
     indicator_price = my_portfolio.max_price["NAME"] # TODO: edit indicator name for simple fund
     fund_price = my_portfolio.max_price["NAME"]       # TODO: get simple fund name
     if convertion :
-        if fund_price + 2 < indicator_price :       # TODO: verify conversion rate
+        if my_portfolio.symbol_sum_limit["fund_name"] * fund_price + 2 < my_portfolio.symbol_sum_limit["indicator_name"] * indicator_price :       # TODO: verify conversion rate
             one_way("fund_name", "BUY", my_portfolio, exchange) #TODO: fund_name
-            convert("SELL", my_portfolio.symbol_sum_limit["fund_name"], my_portfolio, exchange)  #TODO: fund_name
-            one_way("indicator_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
-        elif indicator_price + 2 < fund_price:
+            if my_portfolio.holdings["fund_name"] == my_portfolio.symbol_sum_limit["fund_name"]: # if holdings are sufficient
+                convert("SELL", my_portfolio.symbol_sum_limit["fund_name"], my_portfolio, exchange)  #TODO: fund_name
+                one_way("indicator_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+
+        elif my_portfolio.symbol_sum_limit["indicator_name"] * indicator_price + 2 < my_portfolio.symbol_sum_limit["fund_name"] * fund_price:
             one_way("indicator_name", "BUY", my_portfolio, exchange) #TODO: fund_name
-            convert("BUY", my_portfolio.symbol_sum_limit["indicator_name"], my_portfolio, exchange)  #TODO: indicator_name 1:1 conversion?
-            one_way("fund_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+            if my_portfolio.holdings["indicator_name"] == my_portfolio.symbol_sum_limit["indicator_name"]: # if holdings are sufficient
+                convert("BUY", my_portfolio.symbol_sum_limit["indicator_name"], my_portfolio, exchange)  #TODO: indicator_name 1:1 conversion?
+                one_way("fund_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
 
 def convert_simple(trade_direction, amount, my_portfolio, exchange):
     index = my_portfolio.order_history_index
@@ -138,9 +171,8 @@ def convert_simple(trade_direction, amount, my_portfolio, exchange):
 
     print(json, file=exchange)
     # TODO: adapt balances accordingly
-    myTrade_Portfolio.order_history_list[history_trade_order_index] = Trade_Ticket("XLF", -1, amount, trade_direction,
-                                                                                   myTrade_Portfolio,
-                                                                                   is_not_allow_fill=True)
+    my_portfolio.order_history[index] = Order("fund_name", -1, amount, trade_direction,
+                                                                                   myTrade_Portfolio) # is_not_allow_fill=True
 
     if trade_direction == "BUY":
         sign = +1
@@ -148,11 +180,8 @@ def convert_simple(trade_direction, amount, my_portfolio, exchange):
         sign = -1
 
     #convert stocks to XLF
-    myTrade_Portfolio.positions_sym["BOND"] -= sign * 3 * amount / 10
-    myTrade_Portfolio.positions_sym["GS"] -= sign * 2 * amount / 10
-    myTrade_Portfolio.positions_sym["MS"] -= sign * 3 * amount / 10
-    myTrade_Portfolio.positions_sym["WFC"] -= sign * 2 * amount / 10
-    myTrade_Portfolio.positions_sym["XLF"] += sign * amount
+    my_portfolio.holdings["indicator_name"] -= sign * 0 * amount / 1 # TODO update indicator name and ratio
+    my_portfolio.holdings["fund_name"] += sign * amount
 
 def main():
     # permission to trade each kind of stocks
@@ -179,7 +208,7 @@ def main():
                 print("@@@Log: %s" % str(market_info_raw), file=sys.stderr)
 
         if trade_bond:
-            trade_bond(exchange, my_portfolio)
+            bond_trade("BOND", exchange, 1000, my_portfolio) #TODO: fair price
 
         #update
         if(json.loads(market_info_raw)['type'] == 'book'):
@@ -194,8 +223,6 @@ def main():
             for stock in my_portfolio.stock_simple_fund:
                 if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
                     simple_fund_trade()
-
-
 
         if trade_complex_fund:
             component_price = 0  # calculate the price of the fund according to respective composition
