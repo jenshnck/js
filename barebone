@@ -15,6 +15,11 @@ class Stock_Portfolio():
 
         self.holdings = {"BOND": 0, "NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
         self.symbol_sum_limit = {"BOND": 100, "NOKFH": 10, "NOKUS": 10, "AAPL": 100, "MSFT": 100, "GOOG": 100, "XLK": 100}
+        self.spread = {"BOND": 1, "NOKFH": 1, "NOKUS": 1, "AAPL": 1, "MSFT": 1, "GOOG": 1, "XLK": 1}
+
+        self.stock_regular = ["NOKFH", "AAPL", "MSFT", "GOOG"];
+        self.max_price = {"NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
+        self.min_price = {"NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
 
     def pending_order_sum(self, symbol, trade_direction):
         result = 0
@@ -50,6 +55,22 @@ def basic_bond_trade(exchange):
     place_order("BOND", "BUY", fair_price - 1, 100, my_portfolio, exchange)
     place_order("BOND", "SELL", fair_price + 1, 100, my_portfolio, exchange)
 
+def penny_trade(symbol, exchange, my_portfolio):
+    min_price = my_portfolio.min_price[symbol]
+    max_price = my_portfolio.max_price[symbol]
+
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbol_limit - buy
+    sell_amount = symbol_limit - sell
+
+    if buy < symbol_limit and buy_amount > 0:
+        place_order(symbol, "BUY", max_price + my_portfolio.spread[symbol], buy_amount, my_portfolio, exchange)
+    if sell < symbol_limit and sell_amount > 0:
+        place_order(symbol, "SELL", min_price - my_portfolio.spread[symbol], sell_amount, my_portfolio, exchange)
+
 def bond_trade(symbol, exchange, fair_price, my_portfolio):
     buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
     sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
@@ -71,6 +92,16 @@ def connect():
     # parameters: mode, bufsize
     return s.makefile('w+', 1)
 
+def update_max_min(price_info, my_portfolio):
+
+    if price_info['symbol'] in my_portfolio.max_price:
+        symbol = price_info['symbol']
+        my_portfolio.max_price[symbol] = price_info['buy'][0][0] # TODO: analyze book object structure key is buy and value is an array
+    if price_info['symbol'] in my_portfolio.min_price:
+        symbol = price_info['symbol']
+        my_portfolio.min_price[symbol] = price_info['sell'][0][0] # TODO: analyze book object structure key is sell and value is an array
+
+
 def fill(fill_info, my_portfolio):
     fill_info = json.loads(fill_info)
     order = my_portfolio.order_history[fill_info['order_id']]
@@ -84,28 +115,38 @@ def fill(fill_info, my_portfolio):
 def main():
     # permission to trade each kind of stocks
     trade_bond = True
+    trade_regular = False
 
     exchange = connect()
-    json_string = '{"type":"hello","team":"JSPRAY"}' # TODO: fill in team name
+    json_string = '{"type":"hello","team":"JSPRAY"}'
     print(json_string, file=exchange)
 
     my_portfolio = Stock_Portfolio(exchange)
 
     while True:
         market_info_raw = exchange.readline().strip()
+        market_info = json.loads(market_info_raw)
+
+        if(market_info['type'] == 'book'):
+            update_max_min(market_info, my_portfolio)
 
         # error, print for debugging  --> not ERROR! just used for personal recordkepping--> statistical analysis
         if market_info_raw is not None:
-            if json.loads(market_info_raw)['type'] != 'ack' and json.loads(market_info_raw)['type'] != 'book' \
-                    and json.loads(market_info_raw)['type'] != 'trade':
+            if market_info['type'] != 'ack' and market_info['type'] != 'book' \
+                    and market_info['type'] != 'trade':
                 print("@@@Log: %s" % str(market_info_raw), file=sys.stderr)
 
 
-        if(json.loads(market_info_raw)['type'] == 'fill'):
+        if(market_info['type'] == 'fill'):
             fill(market_info_raw, my_portfolio)
 
         if trade_bond:
             bond_trade("BOND", exchange, 1000, my_portfolio)
+
+        if trade_regular:
+            for stock in my_portfolio.stock_regular: # for regular stocks trigger  trade --> penny pitch max and min
+                if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
+                    penny_trade(stock, exchange, my_portfolio)
 
 if __name__ == "__main__":
     main()
