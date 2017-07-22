@@ -13,10 +13,9 @@ class Stock_Portfolio():
         self.order_history = {}
         self.order_history_index = 0
 
-        self.holdings = {"BOND": 0, "STOCKS B": 0} #TODO: change with real stocks names
-        self.symbol_sum_limit = {"BOND": 100, "STOCKS B": 100} #TODO: change with real stocks names
-        self.spread = {"BOND": 1, "STOCKS B": 5} #TODO: change with real stocks names
-        
+        self.holdings = {"BOND": 0, "NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
+        self.symbol_sum_limit = {"BOND": 100, "NOKFH": 10, "NOKUS": 10, "AAPL": 100, "MSFT": 100, "GOOG": 100, "XLK": 100}
+
     def pending_order_sum(self, symbol, trade_direction):
         result = 0
         for history_index in self.order_history:
@@ -33,47 +32,62 @@ class Order():
         self.amount = amount
         self.trade_direction = trade_direction
 
-def place_order(symbol, trade_direction, amount, my_portfolio, exchange):
+def place_order(symbol, trade_direction, price, amount, my_portfolio, exchange):
     index = my_portfolio.order_history_index
     my_portfolio.order_history_index = index + 1
-    json = '{"type": "add", "order_id": ' + str(
+    json_string = '{"type": "add", "order_id": ' + str(
         index) + ',"symbol": "' + symbol + '", "dir": "' + trade_direction + '", "price": ' + str(
         price) + ', "size" : ' + str(amount) + '}' # TODO: make sure json has correct format
 
-    print(json, file=sys.stderr)
-    print(json, file=exchange)
+    print(json_string, file=sys.stderr)
+    print(json_string, file=exchange)
 
     my_portfolio.order_history[index] = Order(symbol, price, amount, trade_direction, my_portfolio)
+
+def basic_bond_trade(exchange):
+    fair_price = 1000
+    # put in two order_history_list for bonds
+    place_order("BOND", "BUY", fair_price - 1, 100, my_portfolio, exchange)
+    place_order("BOND", "SELL", fair_price + 1, 100, my_portfolio, exchange)
 
 def bond_trade(symbol, exchange, fair_price, my_portfolio):
     buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
     sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
     symbol_limit = my_portfolio.symbol_sum_limit[symbol]
 
-   buy_amount = symbolLimit - buy
-    sell_amount = symbolLimit - sell
+    buy_amount = symbol_limit - buy
+    sell_amount = symbol_limit - sell
 
-   if buy < symbol_limit and buy_amount > 0:
-        place_order(symbol, "BUY", fair_price - my_portfolio.spread, buy_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+    if buy < symbol_limit and buy_amount > 0:
+        place_order(symbol, "BUY", fair_price - 1, buy_amount, my_portfolio, exchange)
     if sell < symbol_limit and sell_amount > 0:
-        place_order(symbol, "SELL", fair_price + my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+        place_order(symbol, "SELL", fair_price + 1, sell_amount, my_portfolio, exchange)
 
-# connect to server
 def connect():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # TODO: change parameters on the day
     # parameters: teamname, port number
-    s.connect(("team name", 000))
+    s.connect(("production", 25000))
     # parameters: mode, bufsize
     return s.makefile('w+', 1)
+
+def fill(fill_info, my_portfolio):
+    fill_info = json.loads(fill_info)
+    order = my_portfolio.order_history[fill_info['order_id']]
+    fill_amount = fill_info['size'];
+    order.amount -= fill_amount
+    if order.trade_direction == "BUY":
+        my_portfolio.holdings[order.symbol] += fill_amount
+    else:
+        my_portfolio.holdings[order.symbol] -= fill_amount
 
 def main():
     # permission to trade each kind of stocks
     trade_bond = True
 
     exchange = connect()
-    json = '{"type":"hello","team":"?????"}' # TODO: fill in team name
-    print(json, file=exchange)
+    json_string = '{"type":"hello","team":"JSPRAY"}' # TODO: fill in team name
+    print(json_string, file=exchange)
 
     my_portfolio = Stock_Portfolio(exchange)
 
@@ -86,5 +100,12 @@ def main():
                     and json.loads(market_info_raw)['type'] != 'trade':
                 print("@@@Log: %s" % str(market_info_raw), file=sys.stderr)
 
+
+        if(json.loads(market_info_raw)['type'] == 'fill'):
+            fill(market_info_raw, my_portfolio)
+
         if trade_bond:
             bond_trade("BOND", exchange, 1000, my_portfolio)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1 @@
+scp -i /Users/Horizons/horizons/js/key.pem /Users/Horizons/horizons/js/barebone ubuntu@54.242.204.251:/home/ubuntu/
