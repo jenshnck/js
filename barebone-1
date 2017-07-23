@@ -1,0 +1,343 @@
+#!/usr/bin/python
+from __future__ import print_function
+
+import sys
+import socket
+import json
+import time
+
+class Stock_Portfolio():
+    def __init__(self, exchange):
+        self.exchange = exchange
+
+        self.order_history = {}
+        self.order_history_index = 0
+
+        self.holdings = {"BOND": 0, "NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
+        self.symbol_sum_limit = {"BOND": 100, "NOKFH": 10, "NOKUS": 10, "AAPL": 100, "MSFT": 100, "GOOG": 100, "XLK": 100}
+        self.spread = {"BOND": 1, "NOKFH": 1, "NOKUS": 1, "AAPL": 1, "MSFT": 1, "GOOG": 1, "XLK": 1}
+
+        self.stock_regular = ["AAPL", "GOOG", "MSFT"];
+        self.stock_simple_fund = ["NOKFH", "NOKUS"];
+        self.max_price = {"BOND": 0, "NOKFH": 0, "NOKUS": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
+        self.min_price = {"BOND": 0, "NOKUS": 0, "NOKFH": 0, "AAPL": 0, "MSFT": 0, "GOOG": 0, "XLK": 0}
+
+        self.trade_price_XLK = 0
+
+        self.penny_tick = {"AAPL": 0, "MSFT": 0, "GOOG": 0}
+
+    def pending_order_sum(self, symbol, trade_direction):
+        result = 0
+        for history_index in self.order_history:
+            order = self.order_history[history_index]
+            if order.symbol == symbol and order.trade_direction == trade_direction:
+                result = result + order.amount
+        return result
+
+# order
+class Order():
+    def __init__(self, symbol, price, amount, trade_direction, my_portfolio): #is_not_allow_fill?
+        self.symbol = symbol
+        self.price = price
+        self.amount = amount
+        self.trade_direction = trade_direction
+
+def place_order(symbol, trade_direction, price, amount, my_portfolio, exchange):
+    index = my_portfolio.order_history_index
+    my_portfolio.order_history_index = index + 1
+    json_string = '{"type": "add", "order_id": ' + str(
+        index) + ',"symbol": "' + symbol + '", "dir": "' + trade_direction + '", "price": ' + str(
+        price) + ', "size" : ' + str(amount) + '}' # TODO: make sure json has correct format
+
+    # print(json_string, file=sys.stderr)
+    print(json_string, file=exchange)
+
+    my_portfolio.order_history[index] = Order(symbol, price, amount, trade_direction, my_portfolio)
+
+def basic_bond_trade(exchange):
+    fair_price = 1000
+    # put in two order_history_list for bonds
+    place_order("BOND", "BUY", fair_price - 1, 100, my_portfolio, exchange)
+    place_order("BOND", "SELL", fair_price + 1, 100, my_portfolio, exchange)
+
+def penny_trade(symbol, exchange, my_portfolio):
+    min_price = my_portfolio.min_price[symbol]
+    max_price = my_portfolio.max_price[symbol]
+    my_portfolio.penny_tick[symbol] = tick[symbol] + 1
+
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbol_limit - buy
+    sell_amount = symbol_limit - sell
+
+    if(max_price - min_price > 2):
+        if buy < symbol_limit and buy_amount > 0:
+            place_order(symbol, "BUY", max_price + my_portfolio.spread[symbol], buy_amount, my_portfolio, exchange)
+            tick = 0
+        if sell < symbol_limit and sell_amount > 0:
+            place_order(symbol, "SELL", min_price - my_portfolio.spread[symbol], sell_amount, my_portfolio, exchange)
+
+def simple_fund_trade(market_message, my_portfolio, exchange):
+    convertion = True
+
+    indicator_price = my_portfolio.max_price["NOKFH"]
+    fund_price = my_portfolio.max_price["NOKUS"]
+
+    indicator_price_fair_price = (my_portfolio.max_price["NOKFH"] + my_portfolio.min_price["NOKFH"])/2
+    fund_price_min = my_portfolio.min_price["NOKUS"]
+    fund_price_max = my_portfolio.max_price["NOKUS"]
+
+    if convertion :
+    #     one_way("fund_name", "BUY", my_portfolio, exchange) #TODO: fund_name
+    #     if my_portfolio.symbol_sum_limit["fund_name"] * fund_price + 2 < my_portfolio.symbol_sum_limit["indicator_name"] * indicator_price :       # TODO: verify conversion rate
+    #         if my_portfolio.holdings["fund_name"] == my_portfolio.symbol_sum_limit["fund_name"]: # if holdings are sufficient
+    #             convert("SELL", my_portfolio.symbol_sum_limit["fund_name"], my_portfolio, exchange)  #TODO: fund_name
+    #             one_way("indicator_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+    #
+    #     elif my_portfolio.symbol_sum_limit["indicator_name"] * indicator_price + 2 < my_portfolio.symbol_sum_limit["fund_name"] * fund_price:
+    #         if my_portfolio.holdings["indicator_name"] == my_portfolio.symbol_sum_limit["indicator_name"]: # if holdings are sufficient
+    #             convert("BUY", my_portfolio.symbol_sum_limit["indicator_name"], my_portfolio, exchange)  #TODO: indicator_name 1:1 conversion?
+    #             one_way("fund_name", "SELL", my_portfolio, exchange) #TODO: indicator_name
+    # else :
+        if fund_price_max > indicator_price_fair_price:
+            if my_portfolio.holdings["NOKFH"] == my_portfolio.symbol_sum_limit["NOKFH"]:
+                convert_simple("NOKFH", "BUY", my_portfolio.symbol_sum_limit["NOKFH"], my_portfolio, exchange)
+                one_way("NOKUS", "SELL", my_portfolio, exchange)
+            one_way("NOKUS", "SELL", exchange, my_portfolio)
+            one_way("NOKFH", "BUY", exchange, my_portfolio)
+
+        elif fund_price_min < indicator_price_fair_price:
+            if my_portfolio.holdings["NOKUS"] == my_portfolio.symbol_sum_limit["NOKUS"]:
+                convert_simple("NOKUS", "SELL", my_portfolio.symbol_sum_limit["NOKUS"], my_portfolio, exchange)
+                one_way("NOKFH", "SELL", my_portfolio, exchange)
+            one_way("NOKUS", "BUY", exchange, my_portfolio)
+            one_way("NOKFH", "SELL", exchange, my_portfolio)
+
+def convert_simple(symbol, trade_direction, amount, my_portfolio, exchange):
+    index = my_portfolio.order_history_index
+    my_portfolio.order_history_index = index + 1
+
+    # def __init__(self, symbol, price, amount, trade_direction, my_portfolio): #is_not_allow_fill?
+
+    json_string = '{"type": "convert", "order_id": %d' % index + ', "symbol": symbol, "dir": "' + trade_direction + '", "size": %s}' % str(
+    amount)
+
+    print("convert_simple@@@@@@@@@@@@@@@@", json_string)
+
+    print(json_string, file=exchange)
+
+    if trade_direction == "BUY":
+        sign = +1
+    else:
+        sign = -1
+
+    my_portfolio.holdings["NOKFH"] -= sign * amount
+    my_portfolio.holdings["NOKUS"] += sign * amount
+
+def one_way(symbol, trade_direction, exchange, my_portfolio):
+
+    # print("@@@@@@@@@my_portfolio:", my_portfolio)
+
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbol_limit - buy
+    sell_amount = symbol_limit - sell
+
+    if trade_direction == "BUY":
+        max_price = my_portfolio.max_price[symbol]
+        if buy < symbol_limit and buy_amount > 0:
+            place_order(symbol, "BUY", max_price + 3, buy_amount, my_portfolio, exchange)
+
+    else:
+        min_price = my_portfolio.min_price[symbol]
+        if sell < symbol_limit and sell_amount > 0:
+            place_order(symbol, "SELL", min_price - 3, sell_amount, my_portfolio, exchange)
+
+def bond_trade(symbol, exchange, fair_price, my_portfolio):
+    buy = my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "BUY")
+    sell = -1 * my_portfolio.holdings[symbol] + my_portfolio.pending_order_sum(symbol, "SELL")
+    symbol_limit = my_portfolio.symbol_sum_limit[symbol]
+
+    buy_amount = symbol_limit - buy
+    sell_amount = symbol_limit - sell
+
+    if buy < symbol_limit and buy_amount > 0:
+        place_order(symbol, "BUY", fair_price - 1, buy_amount, my_portfolio, exchange)
+    if sell < symbol_limit and sell_amount > 0:
+        place_order(symbol, "SELL", fair_price + 1, sell_amount, my_portfolio, exchange)
+
+def connect():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # TODO: change parameters on the day
+    # parameters: teamname, port number
+    s.connect(("test-exch-jspray", 25000))
+    # parameters: mode, bufsize
+    return s.makefile('w+', 1)
+
+def update_max_min(price_info, my_portfolio):
+    # if price_info['symbol']=='GOOG':
+    #     print("price_info:", price_info)
+
+    if price_info['symbol'] in my_portfolio.max_price:
+        symbol = price_info['symbol']
+        if len(price_info['buy'])>0:
+            my_portfolio.max_price[symbol] = price_info['buy'][0][0] # TODO: analyze book object structure key is buy and value is an array
+    if price_info['symbol'] in my_portfolio.min_price:
+        symbol = price_info['symbol']
+        if len(price_info['sell'])>0:
+            my_portfolio.min_price[symbol] = price_info['sell'][0][0] # TODO: analyze book object structure key is sell and value is an array
+
+    # print("Max price:", my_portfolio.max_price)
+    # print("Min price:", my_portfolio.min_price)
+
+def fill(fill_info, my_portfolio):
+    order = my_portfolio.order_history[fill_info['order_id']]
+    fill_amount = fill_info['size']
+    order.amount -= fill_amount
+    if order.trade_direction == "BUY":
+        my_portfolio.holdings[order.symbol] += fill_amount
+    else:
+        my_portfolio.holdings[order.symbol] -= fill_amount
+
+def convert_XLK(trade_direction, amount, my_portfolio, exchange):
+    # increase the counter of the id
+    # print('@@@@@@@@@@@@@@@@@@@@@@@')
+
+    index = my_portfolio.order_history_index
+    my_portfolio.order_history_index += 1
+
+    json_string = '{"type": "convert", "order_id": %d' % index + ', "symbol": "XLK", "dir": "' + trade_direction + '", "size": %s}' % str(
+        amount)
+
+    print(json_string, file=exchange)
+
+    my_portfolio.order_history[index] = Order("XLK", -1, amount, trade_direction, my_portfolio)
+
+    print(json_string)
+    if trade_direction == "BUY":
+        sign = +1
+    else:
+        sign = -1
+
+    #convert stocks to XLF
+    my_portfolio.holdings["BOND"] -= sign * 3 * amount / 10
+    my_portfolio.holdings["AAPL"] -= sign * 2 * amount / 10
+    my_portfolio.holdings["MSFT"] -= sign * 3 * amount / 10
+    my_portfolio.holdings["GOOG"] -= sign * 2 * amount / 10
+    my_portfolio.holdings["XLK"] += sign * amount
+
+def main():
+    # permission to trade each kind of stocks
+    trade_bond = False
+    trade_regular = False
+    trade_simple_fund = True
+    trade_complex_fund = False
+
+    exchange = connect()
+    json_string = '{"type":"hello", "team":"JSPRAY"}'
+    print(json_string, file=exchange)
+
+    my_portfolio = Stock_Portfolio(exchange)
+
+    while True:
+        market_info_raw = exchange.readline().strip()
+
+        # error, print for debugging  --> not ERROR! just used for personal recordkepping--> statistical analysis
+        if market_info_raw is not None:
+            market_info = json.loads(market_info_raw)
+
+            if(market_info['type'] == 'book'):
+                update_max_min(market_info, my_portfolio)
+
+            if(market_info['type'] == 'hello'):
+                    symbols = market_info['symbols']
+                    for info in symbols:
+                        theSym = info['symbol']
+                        position = info['position']
+                        my_portfolio.holdings[theSym] = position
+
+            if market_info['type'] != 'ack' and market_info['type'] != 'book' \
+                    and market_info['type'] != 'trade':
+                print("@@@Log: %s" % str(market_info_raw), file=sys.stderr)
+
+            if (market_info['type'] == 'fill'):
+                fill(market_info, my_portfolio)
+
+        if trade_bond:
+            bond_trade("BOND", exchange, 1000, my_portfolio)
+
+        if trade_simple_fund:
+            for stock in my_portfolio.stock_simple_fund:
+                if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
+                    simple_fund_trade(market_info, my_portfolio, exchange)
+
+        if trade_regular:
+            for stock in my_portfolio.stock_regular: # for regular stocks trigger  trade --> penny pitch max and min
+                if(my_portfolio.max_price[stock] != 0 and my_portfolio.min_price[stock] != 0):
+                    penny_trade(stock, exchange, my_portfolio, exchange)
+
+
+        if trade_complex_fund:
+            if  my_portfolio.max_price['MSFT'] != 0 and my_portfolio.min_price[
+                'MSFT'] != 0 and my_portfolio.max_price['AAPL'] != 0 and my_portfolio.min_price[
+                'AAPL'] != 0 and my_portfolio.min_price['XLK'] != 0 and my_portfolio.max_price[
+                'XLK'] != 0 and my_portfolio.min_price['GOOG'] != 0 and my_portfolio.max_price[
+                'GOOG'] != 0:
+
+                fair_price_MSFT = int(
+                    round((my_portfolio.max_price['MSFT'] + my_portfolio.min_price['MSFT']) / 2.0))
+                fair_price_AAPL = int(
+                    round((my_portfolio.max_price['AAPL'] + my_portfolio.min_price['AAPL']) / 2.0))
+                fair_price_GOOG = int(
+                    round((my_portfolio.max_price['GOOG'] + my_portfolio.min_price['GOOG']) / 2.0))
+                fair_price_XLK = int(
+                        round((my_portfolio.max_price['XLK'] + my_portfolio.min_price['XLK']) / 2.0))
+
+                my_portfolio.trade_price_XLK = (3 * 1000 + 2 * fair_price_MSFT + 3 * fair_price_AAPL + 2 * fair_price_GOOG)
+                my_portfolio.trade_price_XLK = int(round(my_portfolio.trade_price_XLK / 10))
+
+                # amount = 40
+                #
+                # long_amount = my_portfolio.holdings["XLK"] + my_portfolio.pending_order_sum("XLF", "BUY")
+                # short_amount = -1 * my_portfolio.holdings["XLK"] + my_portfolio.pending_order_sum("XLK", "SELL")
+                print("fair_price_XLK :", fair_price_XLK, "trade_price_XLK :", my_portfolio.trade_price_XLK)
+                if fair_price_XLK > my_portfolio.trade_price_XLK - 400:
+                    one_way("BOND", "BUY", exchange, my_portfolio)
+                    one_way("AAPL", "BUY", exchange, my_portfolio)
+                    one_way("GOOG", "BUY", exchange, my_portfolio)
+                    one_way("MSFT", "BUY", exchange, my_portfolio)
+                    one_way("XLK", "SELL", exchange, my_portfolio)
+
+                elif fair_price_XLK < my_portfolio.trade_price_XLK - 400:
+                    one_way("XLK", "BUY", exchange, my_portfolio)
+                    one_way("BOND", "SELL", exchange, my_portfolio)
+                    one_way("AAPL", "SELL", exchange, my_portfolio)
+                    one_way("GOOG", "SELL", exchange, my_portfolio)
+                    one_way("MSFT", "SELL", exchange, my_portfolio)
+
+                    # one_way("NOKFH", "BUY", exchange, my_portfolio)
+
+                # if abs(my_portfolio.trade_price_XLK - fair_price_XLK) > 100 / amount + 10:
+                #
+                #     if my_portfolio.trade_price_XLK > fair_price_XLK:
+                #         trade_direction = "SELL"
+                #     else:
+                #         trade_direction = "BUY"
+                #
+                #     if (trade_direction == "BUY" and amount + long_amount < 100) or (
+                #                     trade_direction == "SELL" and amount + short_amount < 100):
+                #         nettrade_direction = ("BUY" if trade_direction == "SELL" else "SELL")
+                #         place_order("XLK", nettrade_direction, fair_price_XLK + my_portfolio.spread["XLK"], amount, my_portfolio, exchange)
+                #
+                #         place_order("MSFT", trade_direction, fair_price_MSFT, amount / 10 * 3, my_portfolio, exchange)
+                #         place_order("AAPL", trade_direction, fair_price_AAPL, amount / 10 * 2, my_portfolio, exchange)
+                #         place_order("GOOG", trade_direction, fair_price_GOOG, amount / 10 * 2, my_portfolio, exchange)
+
+
+
+if __name__ == "__main__":
+    main()

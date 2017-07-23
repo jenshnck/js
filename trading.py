@@ -104,12 +104,12 @@ def one_way(symbol, trade_direction, exchange, my_portfolio):
     if trade_direction == "BUY":
         max_price = my_portfolio.max_price[symbol]
         if buy < symbol_limit and buy_amount > 0:
-            place_order(symbol, "BUY", max_price + my_portfolio.spread, buy_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+            place_order(symbol, "BUY", max_price + my_portfolio.spread, buy_amount, my_portfolio, exchange)
 
     else:
         min_price = my_portfolio.min_price[symbol]
         if sell < symbol_limit and sell_amount > 0:
-            place_order(symbol, "SELL", min_price - my_portfolio.spread, sell_amount, my_portfolio, exchange) # TODO: potentially lose a lot of money against other ppl with the same strategy
+            place_order(symbol, "SELL", min_price - my_portfolio.spread, sell_amount, my_portfolio, exchange)
 
 
 def parse_market_message(market_message, my_portfolio):
@@ -193,7 +193,7 @@ def convert_simple(trade_direction, amount, my_portfolio, exchange):
     index = my_portfolio.order_history_index
     my_portfolio.order_history_index = index + 1
 
-    json = '{"type": "convert", "order_id": %d' % history_trade_order_index + ', "symbol": "SIMPLE_NAME", "dir": "' + trade_direction + '", "size": %s}' % str( #TODO: add  Simple name
+    json = '{"type": "convert", "order_id": %d' % index + ', "symbol": "SIMPLE_NAME", "dir": "' + trade_direction + '", "size": %s}' % str( #TODO: add  Simple name
         amount)
 
     print(json, file=exchange)
@@ -209,6 +209,30 @@ def convert_simple(trade_direction, amount, my_portfolio, exchange):
     #convert stocks to XLF
     my_portfolio.holdings["indicator_name"] -= sign * 0 * amount / 1 # TODO update indicator name and ratio
     my_portfolio.holdings["fund_name"] += sign * amount
+
+def convertXLF(trade_direction, amount, myTrade_Portfolio, exchange):
+    # increase the counter of the id
+
+    index = my_portfolio.order_history_index
+    myTrade_Portfolio.order_history_index += 1
+
+    json_string = '{"type": "convert", "order_id": %d' % index + ', "symbol": "XLF", "dir": "' + trade_direction + '", "size": %s}' % str(
+        amount)
+
+    print(json_string, file=exchange)
+    my_portfolio.order_history[index] = Order("XLF", -1, amount, trade_direction, myTrade_Portfolio)
+
+    if trade_direction == "BUY":
+        sign = +1
+    else:
+        sign = -1
+
+    #convert stocks to XLF
+    myTrade_Portfolio.positions_sym["BOND"] -= sign * 3 * amount / 10
+    myTrade_Portfolio.positions_sym["GS"] -= sign * 2 * amount / 10
+    myTrade_Portfolio.positions_sym["MS"] -= sign * 3 * amount / 10
+    myTrade_Portfolio.positions_sym["WFC"] -= sign * 2 * amount / 10
+    myTrade_Portfolio.positions_sym["XLF"] += sign * amount
 
 def main():
     # permission to trade each kind of stocks
